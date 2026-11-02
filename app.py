@@ -5,7 +5,9 @@ from datetime import date
 from flask import Flask, abort, g, redirect, render_template, request, url_for
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "todos.db")
+# Vercel에서는 /tmp만 쓰기 가능 (서버가 재시작되면 데이터가 초기화됨)
+DB_DIR = "/tmp" if os.environ.get("VERCEL") else BASE_DIR
+DB_PATH = os.path.join(DB_DIR, "todos.db")
 
 app = Flask(__name__)
 
