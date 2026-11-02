@@ -2,6 +2,8 @@
 
 Python Flask + SQLite로 만든 할일 관리 앱입니다.
 
+배포 주소: https://261102todolist-five.vercel.app
+
 ## 기능
 
 - 할 일 추가 (우선순위, 마감일)
