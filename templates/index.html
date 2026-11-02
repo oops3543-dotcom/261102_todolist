@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block content %}
+<form class="card add-form" action="{{ url_for('add') }}" method="post">
+  <input type="text" name="title" placeholder="할 일을 입력하세요" required autofocus>
+  <select name="priority">
+    {% for key, label in priorities.items() %}
+      <option value="{{ key }}" {% if key == 'medium' %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <input type="date" name="due_date">
+  <button type="submit" class="btn primary">추가</button>
+</form>
+
+<div class="toolbar">
+  <nav class="tabs">
+    {% for key, label in [('all', '전체'), ('active', '진행중'), ('done', '완료')] %}
+      <a href="{{ url_for('index', status=key, q=q or None) }}" class="{{ 'active' if status == key }}">{{ label }}</a>
+    {% endfor %}
+  </nav>
+  <form class="search" method="get">
+    <input type="hidden" name="status" value="{{ status }}">
+    <input type="search" name="q" value="{{ q }}" placeholder="검색">
+  </form>
+</div>
+
+<p class="summary">
+  전체 {{ total }}개 · 완료 {{ done_count }}개 · 남은 일 {{ total - done_count }}개
+  {% if total %}
+    <span class="progress"><span style="width: {{ (done_count / total * 100) | round | int }}%"></span></span>
+  {% endif %}
+</p>
+
+<ul class="todo-list">
+  {% for todo in todos %}
+    {% set overdue = todo.due_date and not todo.done and todo.due_date < today %}
+    <li class="card todo {{ 'done' if todo.done }}">
+      <form action="{{ url_for('toggle', todo_id=todo.id) }}" method="post">
+        <button type="submit" class="check" title="완료 표시">{{ '✔' if todo.done else '' }}</button>
+      </form>
+      <div class="body">
+        <span class="title">{{ todo.title }}</span>
+        <div class="meta">
+          <span class="badge {{ todo.priority }}">{{ priorities[todo.priority] }}</span>
+          {% if todo.due_date %}
+            <span class="due {{ 'overdue' if overdue }}">📅 {{ todo.due_date }}{% if overdue %} (기한 지남){% endif %}</span>
+          {% endif %}
+        </div>
+      </div>
+      <a href="{{ url_for('edit', todo_id=todo.id) }}" class="btn">수정</a>
+      <form action="{{ url_for('delete', todo_id=todo.id) }}" method="post" onsubmit="return confirm('삭제할까요?')">
+        <button type="submit" class="btn danger">삭제</button>
+      </form>
+    </li>
+  {% else %}
+    <li class="empty">할 일이 없습니다.</li>
+  {% endfor %}
+</ul>
+
+{% if done_count %}
+  <form action="{{ url_for('clear_done') }}" method="post" class="clear" onsubmit="return confirm('완료된 항목을 모두 삭제할까요?')">
+    <button type="submit" class="btn">완료 항목 모두 삭제</button>
+  </form>
+{% endif %}
+{% endblock %}
