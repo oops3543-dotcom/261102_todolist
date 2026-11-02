@@ -1,6 +1,7 @@
 import os
 import sqlite3
 from datetime import date
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from flask import Flask, abort, g, redirect, render_template, request, url_for
 
@@ -9,15 +10,53 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_DIR = "/tmp" if os.environ.get("VERCEL") else BASE_DIR
 DB_PATH = os.path.join(DB_DIR, "todos.db")
 
+# Supabase(Postgres) 주소가 있으면 Postgres를, 없으면 로컬 SQLite를 사용
+DATABASE_URL = os.environ.get("POSTGRES_URL") or os.environ.get("DATABASE_URL")
+USE_PG = bool(DATABASE_URL)
+if USE_PG:
+    # Vercel이 넣어주는 주소에는 psycopg가 모르는 옵션(supa=...)이 붙어 있어 sslmode만 남김
+    parts = urlsplit(DATABASE_URL)
+    query = [(k, v) for k, v in parse_qsl(parts.query) if k == "sslmode"]
+    DATABASE_URL = urlunsplit(parts._replace(query=urlencode(query)))
+
 app = Flask(__name__)
 
 PRIORITIES = {"high": "높음", "medium": "보통", "low": "낮음"}
 
 
+class PgDB:
+    """sqlite3 연결처럼 execute()/commit()을 쓸 수 있게 감싼 Postgres 연결"""
+
+    def __init__(self):
+        import psycopg
+        from psycopg.rows import dict_row
+
+        # Supabase 풀러(트랜잭션 모드)는 prepared statement를 지원하지 않음
+        self.conn = psycopg.connect(
+            DATABASE_URL, row_factory=dict_row, prepare_threshold=None
+        )
+
+    def execute(self, sql, params=()):
+        return self.conn.execute(sql.replace("?", "%s"), params)
+
+    def commit(self):
+        self.conn.commit()
+
+    def close(self):
+        self.conn.close()
+
+
+def connect():
+    if USE_PG:
+        return PgDB()
+    db = sqlite3.connect(DB_PATH)
+    db.row_factory = sqlite3.Row
+    return db
+
+
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(DB_PATH)
-        g.db.row_factory = sqlite3.Row
+        g.db = connect()
     return g.db
 
 
@@ -29,9 +68,19 @@ def close_db(exc):
 
 
 def init_db():
-    with sqlite3.connect(DB_PATH) as db:
-        db.execute(
-            """
+    if USE_PG:
+        schema = """
+            CREATE TABLE IF NOT EXISTS todos (
+                id SERIAL PRIMARY KEY,
+                title TEXT NOT NULL,
+                priority TEXT NOT NULL DEFAULT 'medium',
+                due_date TEXT,
+                done INTEGER NOT NULL DEFAULT 0,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """
+    else:
+        schema = """
             CREATE TABLE IF NOT EXISTS todos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 title TEXT NOT NULL,
@@ -40,8 +89,13 @@ def init_db():
                 done INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
             )
-            """
-        )
+        """
+    db = connect()
+    try:
+        db.execute(schema)
+        db.commit()
+    finally:
+        db.close()
 
 
 def get_todo(todo_id):
